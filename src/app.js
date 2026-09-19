@@ -46,8 +46,17 @@ function tutorQuizFor(category) {
 
 var CATEGORY_NAMES = ["Banking", "Saving", "Budgeting", "Credit", "Loans", "Investing", "Insurance", "Taxes", "Scam Awareness"];
 var DEFAULT_SCORES = { "Banking": 45, "Saving": 45, "Budgeting": 45, "Credit": 45, "Loans": 45, "Investing": 45, "Insurance": 45, "Taxes": 45, "Scam Awareness": 45 };
+var REWARDS = [
+  { id: "small-win", cost: 10, emoji: "☕", name: "Small win", description: "A tiny celebration for showing up." },
+  { id: "focus-break", cost: 25, emoji: "🎧", name: "Focus break", description: "A little reset after a good learning streak." },
+  { id: "treat-yourself", cost: 50, emoji: "🍪", name: "Treat yourself", description: "A well-earned medium-sized reward." },
+  { id: "big-momentum", cost: 100, emoji: "🌟", name: "Big momentum", description: "For turning practice into a habit." },
+  { id: "special-milestone", cost: 250, emoji: "🏆", name: "Special milestone", description: "A celebration for serious progress." }
+];
 function topicCategory(id) { return ({ "what-is-a-bank": "Banking", "savings-vs-current": "Banking", "emi": "Loans", "interest-rate": "Loans", "budgeting": "Budgeting", "emergency-fund": "Saving", "credit-card": "Credit" })[id] || "Banking"; }
 function loadAssessment() { try { return JSON.parse(localStorage.getItem("finquest-assessment")) || null; } catch (e) { return null; } }
+function loadStoredNumber(key, fallback) { try { var value = Number(localStorage.getItem(key)); return Number.isFinite(value) && value >= 0 ? value : fallback; } catch (e) { return fallback; } }
+function loadRedemptions() { try { var value = JSON.parse(localStorage.getItem("finquest-redemptions")); return Array.isArray(value) ? value : []; } catch (e) { return []; } }
 
 function el(tag, props) {
   var kids = [];
@@ -57,7 +66,8 @@ function el(tag, props) {
     if (Array.isArray(k)) for (var j = 0; j < k.length; j++) { if (k[j] !== null && k[j] !== undefined && k[j] !== false) kids.push(k[j]); }
     else kids.push(k);
   }
-  return h(tag, props || {}, kids);
+  if (!kids.length) return h(tag, props || {});
+  return h.apply(null, [tag, props || {}].concat(kids));
 }
 
 var TOPIC_LIST = Object.keys(TOPICS).map(function (id) { return TOPICS[id]; });
@@ -71,7 +81,7 @@ function timeNow() { return new Date().toLocaleTimeString([], { hour: "2-digit",
 function App() {
   var savedAssessment = loadAssessment();
   var scr = useState({ name: savedAssessment ? "map" : "assessment" }), screen = scr[0], setScreen = scr[1];
-  var xpS = useState(0), xp = xpS[0], setXp = xpS[1];
+  var xpS = useState(function () { return loadStoredNumber("finquest-xp", 0); }), xp = xpS[0], setXp = xpS[1];
   var stS = useState(0), streak = stS[0], setStreak = stS[1];
   var dayS = useState(""), setLastDay = dayS[1];
   var mS = useState({}), mastered = mS[0], setMastered = mS[1];
@@ -88,6 +98,7 @@ function App() {
   var quizDoneS = useState(0), quizzesDone = quizDoneS[0], setQuizzesDone = quizDoneS[1];
   var simS = useState({ month: 1, cash: 18000, wellbeing: 72, score: 600, job: "Campus intern", savings: 3500, log: ["You begin with a modest safety net. Your choices shape the next month."] }), sim = simS[0], setSim = simS[1];
   var toastS = useState(null), toast = toastS[0], setToast = toastS[1];
+  var redemptionS = useState(loadRedemptions), redemptions = redemptionS[0], setRedemptions = redemptionS[1];
   var bootS = useState(false), booted = bootS[0], setBooted = bootS[1];
 
   var toastTimer = useRef(null);
@@ -116,7 +127,14 @@ function App() {
   var masteredCount = TOPIC_LIST.filter(function (t) { return isMastered(t.id); }).length;
 
   /* ---- economy ---- */
-  function awardXP(n) { setXp(function (v) { return v + n; }); }
+  function awardXP(n) { setXp(function (v) { var next = v + n; try { localStorage.setItem("finquest-xp", String(next)); } catch (e) {} return next; }); }
+  function redeemReward(reward) {
+    if (xp < reward.cost) return;
+    var entry = { id: reward.id, name: reward.name, cost: reward.cost, emoji: reward.emoji, when: timeNow() };
+    setXp(function (v) { var next = v - reward.cost; try { localStorage.setItem("finquest-xp", String(next)); } catch (e) {} return next; });
+    setRedemptions(function (items) { var next = [entry].concat(items); try { localStorage.setItem("finquest-redemptions", JSON.stringify(next)); } catch (e) {} return next; });
+    showToast(reward.name + " redeemed · " + reward.cost + " points spent");
+  }
   function bumpStreak() {
     var t = todayStr();
     setLastDay(function (last) {
@@ -132,7 +150,7 @@ function App() {
   }
   function tierFor(topicId) { return difficulty[topicId] || "standard"; }
 
-  function completeRound(topicId, tier, correct, total) {
+  function completeRound(topicId, tier, correct, total, details) {
     var pct = Math.round((correct / total) * 100);
     var adapt = adaptDifficulty(tier, pct);
     var verdict = verdictFor(pct);
@@ -161,7 +179,7 @@ function App() {
       unlockBadge("pathfinder");
       setTimeout(function () { showToast("Level 2 unlocked · Money & Income"); }, 600);
     }
-    return { verdict: verdict, xpEarned: xpEarned, masteredNow: masteredNow, nextTier: adapt.next, pct: pct };
+    return { verdict: verdict, xpEarned: xpEarned, masteredNow: masteredNow, nextTier: adapt.next, pct: pct, initialCorrect: correct, initialMisses: details ? details.initialMisses : 0, finalMastered: details ? details.finalMastered : correct };
   }
 
   /* ---- navigation ---- */
@@ -170,6 +188,7 @@ function App() {
     if (name === "ask") { if (!booted) { setBooted(true); } go("ask"); }
     else if (name === "life") go("life");
     else if (name === "scam") go("scam");
+    else if (name === "rewards") go("rewards");
     else go(name === "map" ? "map" : "progress");
   }
 
@@ -212,13 +231,16 @@ function App() {
   } else if (screen.name === "topic") {
     body = el(TopicScreen, { topic: TOPICS[screen.topicId], tier: tierFor(screen.topicId), mastered: isMastered(screen.topicId), go: go });
   } else if (screen.name === "quiz") {
-    body = el(QuizScreen, { topic: TOPICS[screen.topicId], tier: tierFor(screen.topicId), onAnswer: function (ok) { if (ok) awardXP(XP_CORRECT); }, onComplete: function (c, t2) { return completeRound(screen.topicId, tierFor(screen.topicId), c, t2); }, go: go });
+    body = el(QuizScreen, { topic: TOPICS[screen.topicId], tier: tierFor(screen.topicId), onAnswer: function (ok) { if (ok) awardXP(XP_CORRECT); }, onComplete: function (c, t2, details) { return completeRound(screen.topicId, tierFor(screen.topicId), c, t2, details); }, go: go });
   } else if (screen.name === "ask") {
     activeTab = "ask";
     body = el(AskScreen, { messages: askMessages, send: sendAsk, topicId: askTopicId, awardXP: awardXP, onChatAnswer: function (ok) { if (ok) { awardXP(XP_CORRECT); setCorrectCount(function (v) { return v + 1; }); bumpStreak(); unlockBadge("first-steps"); } } });
   } else if (screen.name === "progress") {
     activeTab = "progress";
     body = el(ProgressScreen, { xp: xp, streak: streak, masteredCount: masteredCount, totalTopics: TOPIC_LIST.length, correct: corrS[0], badges: badges, log: log, scores: categoryScores, quizzesDone: quizzesDone, simMonth: sim.month, go: go });
+  } else if (screen.name === "rewards") {
+    activeTab = "rewards";
+    body = el(RewardsScreen, { xp: xp, rewards: REWARDS, redemptions: redemptions, redeem: redeemReward });
   } else if (screen.name === "life") {
     activeTab = "life";
     body = el(LifeScreen, { sim: sim, setSim: setSim, awardXP: awardXP, showToast: showToast, setCategoryScores: setCategoryScores });
@@ -441,15 +463,22 @@ function TopicScreen(p) {
 /* ============================ QUIZ ============================ */
 
 function QuizScreen(p) {
-  var qS = useState(function () { return shuffledQuestions(p.topic.quiz[p.tier]); }), qs = qS[0], setQuestions = qS[1];
+  function newQuestions() { return shuffledQuestions(p.topic.quiz[p.tier]).map(function (question, questionIndex) { return Object.assign({}, question, { quizId: questionIndex }); }); }
+  var qS = useState(newQuestions), qs = qS[0], setQuestions = qS[1];
   var idxS = useState(0), idx = idxS[0], setIdx = idxS[1];
   var pickedS = useState(null), picked = pickedS[0], setPicked = pickedS[1];
   var correctS = useState(0), correct = correctS[0], setCorrect = correctS[1];
+  var resultS = useState({}), results = resultS[0], setResults = resultS[1];
   var phaseS = useState("question"), phase = phaseS[0], setPhase = phaseS[1];
+  var revisionS = useState([]), revisionQueue = revisionS[0], setRevisionQueue = revisionS[1];
+  var revisionIdxS = useState(0), revisionIdx = revisionIdxS[0], setRevisionIdx = revisionIdxS[1];
+  var revisionMasteredS = useState(0), revisionMastered = revisionMasteredS[0], setRevisionMastered = revisionMasteredS[1];
+  var initialCorrectS = useState(0), initialCorrect = initialCorrectS[0], setInitialCorrect = initialCorrectS[1];
+  var initialMissesS = useState(0), initialMisses = initialMissesS[0], setInitialMisses = initialMissesS[1];
   var sumS = useState(null), summary = sumS[0], setSummary = sumS[1];
   var floatS = useState(0), floatKey = floatS[0], bumpFloat = floatS[1];
 
-  var q = qs[Math.min(idx, qs.length - 1)];
+  var q = phase === "revision" ? revisionQueue[revisionIdx] : qs[Math.min(idx, qs.length - 1)];
   var total = qs.length;
   var isLast = idx === total - 1;
 
@@ -457,11 +486,32 @@ function QuizScreen(p) {
     if (picked !== null) return;
     setPicked(i);
     var ok = i === q.answer;
-    if (ok) { setCorrect(correct + 1); p.onAnswer(true); bumpFloat(floatKey + 1); }
+    setResults(function (old) { var next = Object.assign({}, old); next[q.quizId] = ok; return next; });
+    if (ok) { setCorrect(correct + 1); if (phase === "question") setInitialCorrect(initialCorrect + 1); p.onAnswer(true); bumpFloat(floatKey + 1); }
   }
   function next() {
-    if (isLast) { setSummary(p.onComplete(correct, total)); setPhase("summary"); }
-    else { setIdx(idx + 1); setPicked(null); }
+    if (phase === "revision") {
+      var revisedCorrectly = picked === q.answer;
+      if (revisedCorrectly) {
+        var remaining = revisionQueue.filter(function (question) { return question.quizId !== q.quizId; });
+        setRevisionMastered(revisionMastered + 1);
+        if (!remaining.length) {
+          setSummary(p.onComplete(initialCorrect, total, { initialMisses: initialMisses, revisionMastered: revisionMastered + 1, finalMastered: initialCorrect + revisionMastered + 1 }));
+          setPhase("summary");
+        } else {
+          setRevisionQueue(remaining); setRevisionIdx(revisionIdx >= remaining.length ? 0 : revisionIdx); setPicked(null);
+        }
+      } else {
+        setRevisionIdx((revisionIdx + 1) % revisionQueue.length); setPicked(null);
+      }
+      return;
+    }
+    if (isLast) {
+      var misses = qs.filter(function (question) { return results[question.quizId] !== true; });
+      setInitialMisses(misses.length);
+      if (misses.length) { setRevisionQueue(misses); setRevisionIdx(0); setPicked(null); setPhase("revision"); }
+      else { setSummary(p.onComplete(initialCorrect, total, { initialMisses: 0, revisionMastered: 0, finalMastered: initialCorrect })); setPhase("summary"); }
+    } else { setIdx(idx + 1); setPicked(null); }
   }
 
   if (phase === "summary") {
@@ -474,11 +524,14 @@ function QuizScreen(p) {
         el("div", { className: "summary-headline" }, v.headline),
         el("div", { className: "verdict-banner " + v.accent },
           el("div", { className: "verdict-copy" }, v.copy),
-          el("div", { className: "next-tier" }, "Next round: ", el("b", null, summary.nextTier), " questions",
+          el("div", { className: "next-tier" }, summary.initialMisses ? "Revision complete · " : "Next round: ", el("b", null, summary.initialMisses ? summary.finalMastered + "/" + total : summary.nextTier), summary.initialMisses ? " mastered" : " questions",
             summary.masteredNow ? el("span", { className: "mastered-note" }, " · Topic mastered ✓") : null)
         ),
         el("div", { className: "summary-stats" },
-          el("div", { className: "sum-stat" }, el("div", { className: "sum-num" }, correct + "/" + total), el("div", { className: "sum-lab" }, "score")),
+          el("div", { className: "sum-stat" }, el("div", { className: "sum-num" }, summary.initialCorrect + "/" + total), el("div", { className: "sum-lab" }, "initial score")),
+          el("div", { className: "sum-stat" }, el("div", { className: "sum-num" }, summary.initialCorrect), el("div", { className: "sum-lab" }, "initially correct")),
+          el("div", { className: "sum-stat" }, el("div", { className: "sum-num" }, summary.initialMisses), el("div", { className: "sum-lab" }, "required revision")),
+          el("div", { className: "sum-stat" }, el("div", { className: "sum-num" }, summary.finalMastered), el("div", { className: "sum-lab" }, "mastered")),
           el("div", { className: "sum-stat" }, el("div", { className: "sum-num" }, "+" + summary.xpEarned), el("div", { className: "sum-lab" }, "XP earned")),
           el("div", { className: "sum-stat" }, el("div", { className: "sum-num" }, summary.pct + "%"), el("div", { className: "sum-lab" }, "accuracy"))
         ),
@@ -486,7 +539,7 @@ function QuizScreen(p) {
           v.key === "rebuild"
             ? el("button", { className: "btn btn-ghost", onClick: function () { p.go("topic", { topicId: p.topic.id }); } }, "Review the idea first")
             : null,
-          el("button", { className: "btn btn-primary", onClick: function () { setQuestions(shuffledQuestions(p.topic.quiz[p.tier])); setIdx(0); setPicked(null); setCorrect(0); setSummary(null); setPhase("question"); } }, v.key === "rebuild" ? "Try the Gentle round" : "Go again"),
+          el("button", { className: "btn btn-primary", onClick: function () { setQuestions(newQuestions()); setIdx(0); setPicked(null); setCorrect(0); setResults({}); setRevisionQueue([]); setRevisionIdx(0); setRevisionMastered(0); setInitialCorrect(0); setInitialMisses(0); setSummary(null); setPhase("question"); } }, v.key === "rebuild" ? "Try the Gentle round" : "Go again"),
           el("button", { className: "btn btn-ghost", onClick: function () { p.go("map"); } }, "Back to path")
         )
       )
@@ -498,10 +551,11 @@ function QuizScreen(p) {
   return el(FRAG, null,
     el("div", { className: "quiz-head" },
       el("span", { className: "back-row inline", onClick: function () { p.go("topic", { topicId: p.topic.id }); } }, "← Quit"),
-      el("span", { className: "quiz-tier-chip" }, p.tier + " round")
+      el("span", { className: "quiz-tier-chip" }, phase === "revision" ? "revision round · " + revisionQueue.length + " left" : p.tier + " round")
     ),
-    el("div", { className: "quiz-dots" }, qs.map(function (_, i) {
-      return el("span", { key: i, className: "quiz-dot" + (i < idx || (i === idx && answered) ? " filled" : i === idx ? " current" : "") });
+    el("div", { className: "quiz-dots" }, (phase === "revision" ? revisionQueue : qs).map(function (_, i) {
+      var dotIndex = phase === "revision" ? revisionIdx : idx;
+      return el("span", { key: i, className: "quiz-dot" + (i < dotIndex || (i === dotIndex && answered) ? " filled" : i === dotIndex ? " current" : "") });
     })),
     el("div", { className: "quiz-card" },
       el("div", { className: "quiz-q" }, q.q),
@@ -734,10 +788,44 @@ function ProgressScreen(p) {
   );
 }
 
+function RewardsScreen(p) {
+  return el("section", { className: "rewards-page" },
+    el("div", { className: "rewards-hero" },
+      el("span", null, "POINTS WALLET"),
+      el("strong", null, p.xp),
+      el("b", null, "points available"),
+      el("p", null, "Keep learning, earn small wins, and spend them when something feels worth celebrating.")
+    ),
+    el("div", { className: "path-title" }, "Rewards"),
+    el("div", { className: "reward-grid" }, p.rewards.map(function (reward) {
+      var canRedeem = p.xp >= reward.cost;
+      return el("article", { key: reward.id, className: "reward-card" },
+        el("div", { className: "reward-icon" }, reward.emoji),
+        el("div", { className: "reward-copy" }, el("h2", null, reward.name), el("p", null, reward.description)),
+        el("div", { className: "reward-footer" },
+          el("strong", null, reward.cost + " points"),
+          el("button", { className: "btn btn-primary reward-redeem", disabled: !canRedeem, onClick: function () { p.redeem(reward); } }, canRedeem ? "Redeem" : "Need " + (reward.cost - p.xp) + " more")
+        )
+      );
+    })),
+    el("div", { className: "path-title small" }, "Redemption history"),
+    p.redemptions.length === 0
+      ? el("div", { className: "empty-note" }, "No rewards redeemed yet. Your first small win is close.")
+      : el("div", { className: "redemption-list" }, p.redemptions.map(function (item, index) {
+          return el("div", { key: item.id + "-" + index, className: "redemption-row" },
+            el("span", { className: "redemption-icon" }, item.emoji),
+            el("span", { className: "redemption-name" }, item.name),
+            el("span", { className: "redemption-cost" }, "−" + item.cost),
+            el("span", { className: "redemption-when" }, item.when)
+          );
+        }))
+  );
+}
+
 /* ============================ TAB BAR ============================ */
 
 function TabBar(p) {
-  var tabs = [{ id: "map", icon: "🗺️", label: "Learn" }, { id: "life", icon: "🌱", label: "Life" }, { id: "scam", icon: "🛡️", label: "Scams" }, { id: "ask", icon: "💬", label: "FinBuddy" }, { id: "progress", icon: "🏅", label: "Progress" }];
+  var tabs = [{ id: "map", icon: "🗺️", label: "Learn" }, { id: "life", icon: "🌱", label: "Life" }, { id: "scam", icon: "🛡️", label: "Scams" }, { id: "ask", icon: "💬", label: "FinBuddy" }, { id: "rewards", icon: "🎁", label: "Rewards" }, { id: "progress", icon: "🏅", label: "Progress" }];
   return el("div", { className: "tabbar" }, tabs.map(function (t) {
     return el("button", { key: t.id, className: "tab" + (p.active === t.id ? " active" : ""), onClick: function () { p.go(t.id); } },
       el("span", { className: "tab-icon" }, t.icon), el("span", null, t.label));
