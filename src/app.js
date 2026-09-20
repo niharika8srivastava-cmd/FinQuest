@@ -85,31 +85,279 @@ function todayStr() { return new Date().toDateString(); }
 function timeNow() { return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
 function loadThemePreference() { try { var value = localStorage.getItem("finquest-theme"); return value === "dark" || value === "light" || value === "system" ? value : "system"; } catch (e) { return "system"; } }
 
+var USER_KEY = "finquest-users";
+var SESSION_KEY = "finquest-session";
+var PLACEMENT_CATEGORY_KEYS = ["Banking", "Saving", "Budgeting", "Credit", "Loans", "Investing", "Insurance", "Scam Awareness"];
+var PLACEMENT_QUESTIONS = [
+  { id: "banking-level-1", category: "Banking", level: 1, question: "Which is the safest reason to use a bank account?", options: ["Keep money secure and accessible", "Increase cash by magic", "Avoid all taxes", "Hide every payment"], answer: 0 },
+  { id: "banking-level-2", category: "Banking", level: 2, question: "What should you do if a caller claims to be your bank and asks for your OTP?", options: ["Hang up and verify through the official app or number", "Share it to unblock the account", "Text it to a friend", "Use the link in the message"], answer: 0 },
+  { id: "banking-level-3", category: "Banking", level: 3, question: "Why is keeping money in a bank often safer than cash at home?", options: ["It is protected by regulated systems and separate record-keeping", "Bank money always earns guaranteed high returns", "Banks never face fraud risks", "It removes all payment problems"], answer: 0 },
+  { id: "saving-level-1", category: "Saving", level: 1, question: "What is the main purpose of an emergency fund?", options: ["Cover unexpected essential costs", "Fund a vacation", "Replace insurance", "Pay only luxury bills"], answer: 0 },
+  { id: "saving-level-2", category: "Saving", level: 2, question: "Which is the best way to build a realistic saving habit?", options: ["Save a fixed amount before spending and review monthly", "Spend first and save whatever remains", "Only save when income rises", "Ignore occasional expenses"], answer: 0 },
+  { id: "saving-level-3", category: "Saving", level: 3, question: "A strong emergency fund should usually be based on…", options: ["Essential monthly expenses and your personal risk level", "Your friend’s target amount", "Only your salary bonus", "A random percentage from social media"], answer: 0 },
+  { id: "budgeting-level-1", category: "Budgeting", level: 1, question: "A useful budget begins by comparing…", options: ["Income and essential costs", "Only credit limits", "Only shopping habits", "Only investment returns"], answer: 0 },
+  { id: "budgeting-level-2", category: "Budgeting", level: 2, question: "Why do irregular expenses deserve their own budget bucket?", options: ["They are predictable but not monthly, so planning prevents surprises", "They should never be tracked", "They are always optional", "They do not affect essential spending"], answer: 0 },
+  { id: "budgeting-level-3", category: "Budgeting", level: 3, question: "Which budget habit is most resilient during variable income months?", options: ["Planning based on a conservative low-income month", "Spending up to the highest past salary", "Ignoring savings when income drops", "Using only credit cards for expenses"], answer: 0 },
+  { id: "credit-level-1", category: "Credit", level: 1, question: "What is the healthiest way to use a credit card?", options: ["Pay the full statement by the due date", "Pay only the minimum every time", "Spend up to the limit each month", "Never review the bill"], answer: 0 },
+  { id: "credit-level-2", category: "Credit", level: 2, question: "Why is a low credit utilization usually helpful?", options: ["It suggests you are using credit responsibly and not over-relying on debt", "It guarantees a better salary", "It removes all interest charges", "It increases tax liability"], answer: 0 },
+  { id: "credit-level-3", category: "Credit", level: 3, question: "What does a credit score best reflect?", options: ["How reliably you have repaid borrowed money before", "Your bank balance at the moment", "Your social media following", "The interest rate on your fixed deposit"], answer: 0 },
+  { id: "loans-level-1", category: "Loans", level: 1, question: "A longer loan tenure usually means…", options: ["Lower monthly EMI but higher total interest", "Lower total interest always", "No downside at all", "Fewer due dates"], answer: 0 },
+  { id: "loans-level-2", category: "Loans", level: 2, question: "Why do early EMIs contain a larger share of interest?", options: ["The outstanding principal balance is highest at the start", "Banks charge a flat fee only in the first month", "Early repayments are never counted", "Interest is fixed forever"], answer: 0 },
+  { id: "loans-level-3", category: "Loans", level: 3, question: "Which loan choice is most expensive over time?", options: ["A long tenure with a higher rate and only minimum payments", "A short tenure with a lower rate", "A zero-interest check", "A fixed deposit loan"], answer: 0 },
+  { id: "investing-level-1", category: "Investing", level: 1, question: "What is diversification trying to reduce?", options: ["Dependence on any one investment", "The chance of any loss", "The need to understand risk", "Every market movement"], answer: 0 },
+  { id: "investing-level-2", category: "Investing", level: 2, question: "What is the main benefit of investing regularly through a SIP?", options: ["It builds consistency and reduces timing pressure", "It avoids all risk", "It guarantees returns", "It makes stock prices stable"], answer: 0 },
+  { id: "investing-level-3", category: "Investing", level: 3, question: "Why is chasing a hot tip usually a weak strategy?", options: ["It ignores your goals, time horizon and risk tolerance", "It guarantees profit in every market", "It always lowers fees", "It replaces the need for saving"], answer: 0 },
+  { id: "insurance-level-1", category: "Insurance", level: 1, question: "Insurance is primarily designed to…", options: ["Protect against specific financial losses", "Create guaranteed returns", "Replace all saving", "Reduce tax to zero"], answer: 0 },
+  { id: "insurance-level-2", category: "Insurance", level: 2, question: "Why do people buy insurance even if they hope not to use it?", options: ["It transfers large risks to a pool for a manageable premium", "It removes all future bills", "It replaces investments forever", "It guarantees a profit"], answer: 0 },
+  { id: "insurance-level-3", category: "Insurance", level: 3, question: "Which is the strongest reason to buy health or term cover early?", options: ["Premiums can rise with age and your ability to cover a shock matters most when you are young and healthy", "It guarantees immediate returns on investment", "It is required for every savings account", "It removes inflation"], answer: 0 },
+  { id: "scams-level-1", category: "Scam Awareness", level: 1, question: "What is the safest response to a message saying your bank will block your account unless you share your OTP?", options: ["Ignore it and verify using the official app or number", "Send the OTP immediately", "Click the link and enter details", "Forward it to family"], answer: 0 },
+  { id: "scams-level-2", category: "Scam Awareness", level: 2, question: "Why are fake investment schemes that promise guaranteed returns risky?", options: ["If it guarantees returns, the risk is likely being hidden or misrepresented", "They are always regulated", "They never involve urgency", "They protect you from loss"], answer: 0 },
+  { id: "scams-level-3", category: "Scam Awareness", level: 3, question: "What is the biggest red flag in a suspicious banking SMS or call?", options: ["Urgency combined with requests for credentials or links", "A polite sign-off from a bank", "A detailed account summary", "A standard confirmation message"], answer: 0 }
+];
+var PLACEMENT_ASSESSMENT_QUESTIONS = PLACEMENT_QUESTIONS.filter(function (question) {
+  return ["banking-level-1", "saving-level-1", "budgeting-level-1", "credit-level-1", "scams-level-1"].indexOf(question.id) !== -1;
+});
+
+function loadUsers() { try { return JSON.parse(localStorage.getItem(USER_KEY)) || []; } catch (e) { return []; } }
+function saveUsers(users) { try { localStorage.setItem(USER_KEY, JSON.stringify(users)); } catch (e) {} }
+function loadSession() { try { return JSON.parse(localStorage.getItem(SESSION_KEY)) || null; } catch (e) { return null; } }
+function saveSession(user) { try { localStorage.setItem(SESSION_KEY, JSON.stringify({ id: user.id, email: user.email })); } catch (e) {} }
+function clearSession() { try { localStorage.removeItem(SESSION_KEY); } catch (e) {} }
+function syncLegacyProfile(user) {
+  if (!user) return;
+  try { localStorage.setItem("finquest-xp", String(user.xp || 0)); } catch (e) {}
+  try { localStorage.setItem("finquest-assessment", JSON.stringify(user.assessment || null)); } catch (e) {}
+}
+function getCurrentUser() {
+  var session = loadSession();
+  if (!session || !session.email) return null;
+  var users = loadUsers();
+  var user = users.find(function (item) { return item.email && item.email.toLowerCase() === session.email.toLowerCase(); });
+  return user || null;
+}
+function saveUserProfile(user) {
+  var users = loadUsers();
+  var email = String(user.email || "").toLowerCase();
+  var idx = users.findIndex(function (item) { return item.email && item.email.toLowerCase() === email; });
+  if (idx === -1) { users.push(user); }
+  else { users[idx] = user; }
+  saveUsers(users);
+  saveSession(user);
+  syncLegacyProfile(user);
+}
+function buildPlacementResult(answers) {
+  var categoryTotals = {};
+  var categoryCorrect = {};
+  PLACEMENT_CATEGORY_KEYS.forEach(function (category) { categoryTotals[category] = 0; categoryCorrect[category] = 0; });
+  PLACEMENT_ASSESSMENT_QUESTIONS.forEach(function (question) {
+    categoryTotals[question.category] += 1;
+    if (answers[question.id] === true) categoryCorrect[question.category] += 1;
+  });
+  var categoryScores = {};
+  var categoryLevels = {};
+  var totalScore = 0;
+  PLACEMENT_CATEGORY_KEYS.forEach(function (category) {
+    var score = categoryTotals[category] ? Math.round((categoryCorrect[category] / categoryTotals[category]) * 100) : 45;
+    categoryScores[category] = score;
+    var level = score >= 92 ? 5 : score >= 78 ? 4 : score >= 62 ? 3 : score >= 46 ? 2 : 1;
+    categoryLevels[category] = level;
+    totalScore += score;
+  });
+  var overallScore = Math.round(totalScore / PLACEMENT_CATEGORY_KEYS.length);
+  var overallLevel = overallScore >= 92 ? 5 : overallScore >= 78 ? 4 : overallScore >= 62 ? 3 : overallScore >= 46 ? 2 : 1;
+  var unlockedLevels = [];
+  for (var i = 1; i <= 5; i++) {
+    unlockedLevels.push(i);
+    if (i >= overallLevel + 1) break;
+  }
+  var weakestCategory = PLACEMENT_CATEGORY_KEYS.slice().sort(function (a, b) { return categoryScores[a] - categoryScores[b]; })[0];
+  var strongestCategory = PLACEMENT_CATEGORY_KEYS.slice().sort(function (a, b) { return categoryScores[b] - categoryScores[a]; })[0];
+  var recommendation = "Focus on " + weakestCategory + " next to deepen your foundation and unlock the next learning step.";
+  if (categoryScores.Banking >= 70) recommendation = "Your banking fundamentals are strong, so Level 2 has been unlocked. Keep building on your saving and budgeting habits.";
+  if (categoryScores.Budgeting >= 70 && categoryScores.Saving >= 70) recommendation = "Your money habits are already solid. Next, strengthen the areas that still feel uncertain so you can move into more advanced finance with confidence.";
+  if (strongestCategory) {
+    recommendation = "You are strongest in " + strongestCategory + ". Keep a steady rhythm there while you deepen " + weakestCategory + " so your next level feels natural and not rushed.";
+  }
+  return {
+    completed: true,
+    completedAt: new Date().toISOString(),
+    overallLevel: overallLevel,
+    currentLevel: overallLevel,
+    overallScore: overallScore,
+    financialLiteracyScore: overallScore,
+    categoryScores: categoryScores,
+    categoryLevels: categoryLevels,
+    unlockedLevels: unlockedLevels,
+    weakestCategory: weakestCategory,
+    strongestCategory: strongestCategory,
+    recommendation: recommendation
+  };
+}
+
+function getDefaultProgressState() {
+  return {
+    xp: 0,
+    streak: 0,
+    scores: Object.assign({}, DEFAULT_SCORES),
+    assessment: null,
+    unlockedLevels: [1],
+    currentLevel: 1,
+    mastered: {},
+    difficulty: {},
+    log: [],
+    badges: {},
+    quizzesDone: 0,
+    correctCount: 0,
+    askMessages: [],
+    lastDay: "",
+    redemptions: []
+  };
+}
+
+function AuthScreen(p) {
+  var nameS = useState(""), name = nameS[0], setName = nameS[1];
+  var emailS = useState(""), email = emailS[0], setEmail = emailS[1];
+  var passwordS = useState(""), password = passwordS[0], setPassword = passwordS[1];
+  var confirmS = useState(""), confirmPassword = confirmS[0], setConfirmPassword = confirmS[1];
+  var errorS = useState(""), error = errorS[0], setError = errorS[1];
+  var signup = p.mode === "signup";
+  function submit(event) {
+    event.preventDefault();
+    setError("");
+    var result = p.onSubmit({ mode: signup ? "signup" : "signin", name: name, email: email, password: password, confirmPassword: confirmPassword });
+    if (!result.ok) setError(result.message);
+  }
+  return el("main", { className: "auth-page" },
+    el("section", { className: "auth-card" },
+      el("div", { className: "auth-mark" }, "₹"),
+      el("span", { className: "auth-kicker" }, "FINQUEST"),
+      el("h1", null, signup ? "Build your money path." : "Welcome back."),
+      el("p", null, signup ? "Create an account, then take a short placement check so your lessons start at the right level." : "Sign in to continue your personalized learning path."),
+      el("form", { onSubmit: submit },
+        signup ? el("label", null, "Name", el("input", { value: name, required: true, autoComplete: "name", onChange: function (event) { setName(event.target.value); } })) : null,
+        el("label", null, "Email", el("input", { type: "email", value: email, required: true, autoComplete: "email", onChange: function (event) { setEmail(event.target.value); } })),
+        el("label", null, "Password", el("input", { type: "password", value: password, required: true, autoComplete: signup ? "new-password" : "current-password", onChange: function (event) { setPassword(event.target.value); } })),
+        signup ? el("label", null, "Confirm password", el("input", { type: "password", value: confirmPassword, required: true, autoComplete: "new-password", onChange: function (event) { setConfirmPassword(event.target.value); } })) : null,
+        error ? el("div", { className: "auth-error", role: "alert" }, error) : null,
+        el("button", { className: "btn btn-primary auth-submit", type: "submit" }, signup ? "Create account" : "Sign in")
+      ),
+      !signup ? el("button", { className: "auth-link", type: "button", onClick: p.onForgotPassword }, "Forgot your password?") : null,
+      el("p", { className: "auth-switch" }, signup ? "Already have an account? " : "New to FinQuest? ", el("button", { type: "button", onClick: function () { setError(""); p.onModeChange(signup ? "signin" : "signup"); } }, signup ? "Sign in" : "Create an account"))
+    )
+  );
+}
+
+function DashboardScreen(p) {
+  var scores = p.categoryScores || {};
+  var weakest = Object.keys(scores).sort(function (a, b) { return scores[a] - scores[b]; })[0] || "your next skill";
+  var level = p.assessment && p.assessment.overallLevel ? p.assessment.overallLevel : 1;
+  return el("main", { className: "dashboard-page" },
+    el("section", { className: "dashboard-hero" },
+      el("span", { className: "eyebrow-chip" }, "YOUR FINQUEST PATH"),
+      el("h1", null, "Welcome, " + (p.user.name || "learner") + "."),
+      el("p", null, "You are placed at Level " + level + ". Your next focus is " + weakest + "."),
+      el("button", { className: "btn btn-primary", onClick: function () { p.go("map"); } }, "Continue learning →"),
+      el("button", { className: "btn btn-dark", onClick: p.signOut }, "Sign out")
+    ),
+    el("div", { className: "quick-stats" },
+      el("div", null, el("strong", null, p.assessment ? p.assessment.overallScore + "%" : "—"), el("span", null, "placement score")),
+      el("div", null, el("strong", null, p.xp), el("span", null, "XP earned")),
+      el("div", null, el("strong", null, p.streak), el("span", null, "day streak"))
+    ),
+    el("section", { className: "dashboard-mini" },
+      el("div", null, el("b", null, "Your weakest area"), el("span", null, weakest + " · start here")),
+      el("button", { className: "btn btn-primary", onClick: function () { p.go("map"); } }, "Open learning map")
+    )
+  );
+}
+
 /* ============================ APP ============================ */
 
 function App() {
-  var savedAssessment = loadAssessment();
-  var scr = useState({ name: savedAssessment ? "map" : "assessment" }), screen = scr[0], setScreen = scr[1];
-  var xpS = useState(function () { return loadStoredNumber("finquest-xp", 0); }), xp = xpS[0], setXp = xpS[1];
-  var stS = useState(0), streak = stS[0], setStreak = stS[1];
+  var existingSession = loadSession();
+  var userSession = existingSession ? getCurrentUser() : null;
+  var initialScreen = userSession && userSession.assessment && userSession.assessment.completed
+    ? { name: "dashboard" }
+    : userSession
+      ? { name: "assessment" }
+      : { name: "auth", mode: "signin" };
+  var scr = useState(initialScreen), screen = scr[0], setScreen = scr[1];
+  var usrS = useState(userSession), currentUser = usrS[0], setCurrentUser = usrS[1];
+  var xpS = useState(function () { return loadStoredNumber("finquest-xp", currentUser && currentUser.xp ? currentUser.xp : 0); }), xp = xpS[0], setXp = xpS[1];
+  var stS = useState(function () { return currentUser && currentUser.streak ? currentUser.streak : 0; }), streak = stS[0], setStreak = stS[1];
   var dayS = useState(""), setLastDay = dayS[1];
-  var mS = useState({}), mastered = mS[0], setMastered = mS[1];
-  var dS = useState({}), difficulty = dS[0], setDifficulty = dS[1];
-  var logS = useState([]), log = logS[0], setLog = logS[1];
-  var bS = useState({}), badges = bS[0], setBadges = bS[1];
-  var corrS = useState(0), setCorrectCount = corrS[1];
-  var msgS = useState([]), askMessages = msgS[0], setAskMessages = msgS[1];
+  var mS = useState(function () { return currentUser && currentUser.mastered ? currentUser.mastered : {}; }), mastered = mS[0], setMastered = mS[1];
+  var dS = useState(function () { return currentUser && currentUser.difficulty ? currentUser.difficulty : {}; }), difficulty = dS[0], setDifficulty = dS[1];
+  var logS = useState(function () { return currentUser && currentUser.log ? currentUser.log : []; }), log = logS[0], setLog = logS[1];
+  var bS = useState(function () { return currentUser && currentUser.badges ? currentUser.badges : {}; }), badges = bS[0], setBadges = bS[1];
+  var corrS = useState(function () { return currentUser && currentUser.correctCount ? currentUser.correctCount : 0; }), correctCount = corrS[0], setCorrectCount = corrS[1];
+  var msgS = useState(function () { return currentUser && currentUser.askMessages ? currentUser.askMessages : []; }), askMessages = msgS[0], setAskMessages = msgS[1];
   var atS = useState(null), askTopicId = atS[0], setAskTopicId = atS[1];
   var exS = useState(0), askExampleIndex = exS[0], setAskExampleIndex = exS[1];
   var askCountS = useState(0), askCount = askCountS[0], setAskCount = askCountS[1];
-  var assessmentS = useState(savedAssessment), assessment = assessmentS[0], setAssessment = assessmentS[1];
-  var scoreS = useState(savedAssessment ? savedAssessment.scores : DEFAULT_SCORES), categoryScores = scoreS[0], setCategoryScores = scoreS[1];
-  var quizDoneS = useState(0), quizzesDone = quizDoneS[0], setQuizzesDone = quizDoneS[1];
+  var assessmentS = useState(function () { return currentUser && currentUser.assessment ? currentUser.assessment : loadAssessment(); }), assessment = assessmentS[0], setAssessment = assessmentS[1];
+  var scoreS = useState(function () { return currentUser && currentUser.assessment && currentUser.assessment.categoryScores ? currentUser.assessment.categoryScores : (currentUser && currentUser.scores ? currentUser.scores : DEFAULT_SCORES); }), categoryScores = scoreS[0], setCategoryScores = scoreS[1];
+  var quizDoneS = useState(function () { return currentUser && currentUser.quizzesDone ? currentUser.quizzesDone : 0; }), quizzesDone = quizDoneS[0], setQuizzesDone = quizDoneS[1];
   var simS = useState({ month: 1, cash: 18000, wellbeing: 72, score: 600, job: "Campus intern", savings: 3500, log: ["You begin with a modest safety net. Your choices shape the next month."] }), sim = simS[0], setSim = simS[1];
   var toastS = useState(null), toast = toastS[0], setToast = toastS[1];
-  var redemptionS = useState(loadRedemptions), redemptions = redemptionS[0], setRedemptions = redemptionS[1];
+  var redemptionS = useState(function () { return currentUser && currentUser.redemptions ? currentUser.redemptions : loadRedemptions(); }), redemptions = redemptionS[0], setRedemptions = redemptionS[1];
   var bootS = useState(false), booted = bootS[0], setBooted = bootS[1];
   var themeS = useState(loadThemePreference), themePreference = themeS[0], setThemePreference = themeS[1];
+
+  function syncCurrentUser(nextUser) {
+    setCurrentUser(nextUser);
+    saveUserProfile(nextUser);
+    setAssessment(nextUser.assessment || null);
+    setCategoryScores(nextUser.assessment && nextUser.assessment.categoryScores ? nextUser.assessment.categoryScores : DEFAULT_SCORES);
+    setXp(nextUser.xp || 0);
+    setStreak(nextUser.streak || 0);
+    setMastered(nextUser.mastered || {});
+    setDifficulty(nextUser.difficulty || {});
+    setLog(nextUser.log || []);
+    setBadges(nextUser.badges || {});
+    setCorrectCount(nextUser.correctCount || 0);
+    setAskMessages(nextUser.askMessages || []);
+    setQuizzesDone(nextUser.quizzesDone || 0);
+    setRedemptions(nextUser.redemptions || []);
+  }
+
+  useEffect(function () {
+    if (!currentUser) {
+      if (screen && screen.name !== "auth") setScreen({ name: "auth", mode: "signin" });
+      return;
+    }
+    if (!currentUser.assessment || !currentUser.assessment.completed) {
+      if (screen && screen.name !== "assessment") setScreen({ name: "assessment" });
+    }
+    if (currentUser.assessment && currentUser.assessment.completed && screen && screen.name === "assessment") {
+      setScreen({ name: "dashboard" });
+    }
+  }, [currentUser, screen]);
+
+  useEffect(function () {
+    if (!currentUser) return;
+    var nextUser = Object.assign({}, currentUser, {
+      xp: xp,
+      streak: streak,
+      assessment: assessment,
+      scores: categoryScores,
+      categoryScores: categoryScores,
+      mastered: mastered,
+      difficulty: difficulty,
+      log: log,
+      badges: badges,
+      correctCount: correctCount,
+      askMessages: askMessages,
+      quizzesDone: quizzesDone,
+      redemptions: redemptions,
+      updatedAt: new Date().toISOString()
+    });
+    if (JSON.stringify(nextUser) !== JSON.stringify(currentUser)) setCurrentUser(nextUser);
+    saveUserProfile(nextUser);
+    if (assessment && assessment.completed) {
+      try { localStorage.setItem("finquest-assessment", JSON.stringify(assessment)); } catch (e) {}
+    }
+  }, [xp, streak, assessment, categoryScores, mastered, difficulty, log, badges, correctCount, askMessages, quizzesDone, redemptions, currentUser]);
 
   var toastTimer = useRef(null);
   function showToast(text) {
@@ -131,15 +379,93 @@ function App() {
     return ts.every(function (t) { return isMastered(t.id); });
   }
   function isLevelUnlocked(levelId) {
+    if (currentUser && currentUser.assessment && currentUser.assessment.unlockedLevels) {
+      return currentUser.assessment.unlockedLevels.indexOf(levelId) !== -1 || levelId === 1;
+    }
     if (levelId === 1) return true;
     return isLevelMastered(levelId - 1);
   }
   function userLevel() {
+    var profileLevel = currentUser && currentUser.assessment && currentUser.assessment.overallLevel ? currentUser.assessment.overallLevel : 1;
     var ul = 1;
     for (var i = 1; i <= LEVELS.length; i++) if (isLevelUnlocked(i)) ul = i;
-    return ul;
+    return Math.max(profileLevel, ul);
   }
   var masteredCount = TOPIC_LIST.filter(function (t) { return isMastered(t.id); }).length;
+
+  function handleAuth(payload) {
+    var normalizedEmail = String(payload.email || "").trim();
+    var cleanName = String(payload.name || "").trim();
+    var existing = loadUsers().find(function (user) { return user.email && user.email.toLowerCase() === normalizedEmail.toLowerCase(); });
+    if (payload.mode === "signup") {
+      if (!cleanName || !normalizedEmail || !payload.password) {
+        return { ok: false, message: "Please complete all sign-up fields." };
+      }
+      if (payload.password !== payload.confirmPassword) {
+        return { ok: false, message: "Passwords do not match." };
+      }
+      if (existing) {
+        return { ok: false, message: "An account already exists for that email." };
+      }
+      var newUser = {
+        id: "user-" + Date.now(),
+        name: cleanName,
+        email: normalizedEmail,
+        password: payload.password,
+        xp: 0,
+        streak: 0,
+        assessment: null,
+        scores: Object.assign({}, DEFAULT_SCORES),
+        categoryScores: Object.assign({}, DEFAULT_SCORES),
+        unlockedLevels: [1],
+        currentLevel: 1,
+        mastered: {},
+        difficulty: {},
+        log: [],
+        badges: {},
+        askMessages: [],
+        correctCount: 0,
+        quizzesDone: 0,
+        redemptions: [],
+        createdAt: new Date().toISOString()
+      };
+      saveUserProfile(newUser);
+      setCurrentUser(newUser);
+      setScreen({ name: "assessment" });
+      return { ok: true, message: "Account created. Start your placement assessment." };
+    }
+    if (!normalizedEmail || !payload.password) {
+      return { ok: false, message: "Email and password are required." };
+    }
+    if (!existing || existing.password !== payload.password) {
+      return { ok: false, message: "Incorrect email or password." };
+    }
+    saveSession(existing);
+    setCurrentUser(existing);
+    setAssessment(existing.assessment || null);
+    setCategoryScores(existing.assessment && existing.assessment.categoryScores ? existing.assessment.categoryScores : DEFAULT_SCORES);
+    setScreen({ name: existing.assessment && existing.assessment.completed ? "dashboard" : "assessment" });
+    return { ok: true, message: "Welcome back." };
+  }
+
+  function signOut() {
+    clearSession();
+    setCurrentUser(null);
+    setAssessment(null);
+    setCategoryScores(DEFAULT_SCORES);
+    setXp(0);
+    setStreak(0);
+    setMastered({});
+    setDifficulty({});
+    setLog([]);
+    setBadges({});
+    setCorrectCount(0);
+    setAskMessages([]);
+    setQuizzesDone(0);
+    setRedemptions([]);
+    setScreen({ name: "auth", mode: "signin" });
+    showToast("Signed out successfully.");
+  }
 
   /* ---- economy ---- */
   function awardXP(n) { setXp(function (v) { var next = v + n; try { localStorage.setItem("finquest-xp", String(next)); } catch (e) {} return next; }); }
@@ -241,8 +567,49 @@ function App() {
 
   /* ---- screens ---- */
   var body = null, activeTab = "map";
-  if (screen.name === "assessment") {
-    body = el(AssessmentScreen, { onComplete: function (result) { setAssessment(result); setCategoryScores(result.scores); try { localStorage.setItem("finquest-assessment", JSON.stringify(result)); } catch (e) {} go("map"); showToast("Your personal path is ready!"); } });
+  if (!currentUser) {
+    body = el(AuthScreen, { mode: screen.mode || "signin", onSubmit: handleAuth, onForgotPassword: function () { showToast("Password reset: check your inbox for the email reset link."); }, onModeChange: function (nextMode) { setScreen({ name: "auth", mode: nextMode }); } });
+  } else if (screen.name === "auth") {
+    body = el(AuthScreen, { mode: screen.mode || "signin", onSubmit: handleAuth, onForgotPassword: function () { showToast("Password reset: check your inbox for the email reset link."); }, onModeChange: function (nextMode) { setScreen({ name: "auth", mode: nextMode }); } });
+  } else if (screen.name === "assessment") {
+    body = el(AssessmentScreen, { userName: currentUser ? currentUser.name : "friend", onComplete: function (result) {
+      var placement = Object.assign({}, result, {
+        categoryScores: result.categoryScores,
+        categoryLevels: result.categoryLevels,
+        unlockedLevels: result.unlockedLevels,
+        currentLevel: result.overallLevel,
+        overallLevel: result.overallLevel,
+        financialLiteracyScore: result.overallScore,
+        completed: true,
+        completedAt: new Date().toISOString()
+      });
+      var nextUser = Object.assign({}, currentUser, {
+        assessment: placement,
+        scores: placement.categoryScores,
+        categoryScores: placement.categoryScores,
+        xp: xp,
+        streak: streak,
+        currentLevel: placement.overallLevel,
+        unlockedLevels: placement.unlockedLevels || [1],
+        mastered: mastered,
+        difficulty: difficulty,
+        log: log,
+        badges: badges,
+        correctCount: correctCount,
+        askMessages: askMessages,
+        quizzesDone: quizzesDone,
+        redemptions: redemptions
+      });
+      setAssessment(placement);
+      setCategoryScores(placement.categoryScores);
+      setCurrentUser(nextUser);
+      saveUserProfile(nextUser);
+      go("dashboard");
+      showToast("Placement complete! Your learning path is ready.");
+    } });
+  } else if (screen.name === "dashboard") {
+    activeTab = "map";
+    body = el(DashboardScreen, { user: currentUser, assessment: assessment, categoryScores: categoryScores, xp: xp, streak: streak, go: go, signOut: signOut });
   } else if (screen.name === "map") {
     activeTab = "map";
     body = el(MapScreen, { go: go, xp: xp, streak: streak, userLevel: userLevel(), mastered: mastered, isLevelMastered: isLevelMastered, isLevelUnlocked: isLevelUnlocked, masteredCount: masteredCount, tierFor: tierFor, assessment: assessment, categoryScores: categoryScores, onLocked: function (n) { showToast("Master Level " + (n - 1) + " to unlock this stop"); } });
@@ -273,9 +640,9 @@ function App() {
   }
 
   return el("div", { className: "app-frame" },
-    el(TopBar, { xp: xp, streak: streak, userLevel: userLevel(), levelTitle: LEVELS[userLevel() - 1].title, theme: themePreference, setTheme: setThemePreference }),
+    currentUser ? el(TopBar, { xp: xp, streak: streak, userLevel: userLevel(), levelTitle: LEVELS[Math.min(userLevel(), LEVELS.length) - 1].title, theme: themePreference, setTheme: setThemePreference }) : null,
     el("div", { className: "scroll-area" }, body),
-    el(TabBar, { active: activeTab, go: goTab }),
+    currentUser ? el(TabBar, { active: activeTab, go: goTab }) : null,
     toast ? el("div", { className: "toast" }, toast) : null
   );
 }
@@ -381,35 +748,21 @@ function ThemeControl(p) {
 /* ============================ MAP (skill path) ============================ */
 
 function AssessmentScreen(p) {
-  var questions = [
-    ["Banking", "What is the safest reason to use a bank account?", ["To keep and access money securely", "To double money every month", "To avoid all taxes"], 0],
-    ["Saving", "An emergency fund is mainly for…", ["Unplanned necessary costs", "A planned holiday", "Daily trading"], 0],
-    ["Budgeting", "A useful budget begins with…", ["Income and essential expenses", "A credit limit", "A social-media tip"], 0],
-    ["Credit", "What is the best way to use a credit card?", ["Pay the full statement on time", "Spend up to the limit", "Pay only minimums forever"], 0],
-    ["Loans", "A longer loan tenure normally means…", ["Lower EMI but more interest", "No interest", "A higher EMI and less interest"], 0],
-    ["Investing", "Diversification aims to…", ["Reduce dependence on one investment", "Guarantee profits", "Avoid all risk"], 0],
-    ["Insurance", "Insurance is designed to…", ["Protect against specific financial losses", "Create instant returns", "Replace emergency savings"], 0],
-    ["Taxes", "Why should you keep income records?", ["For accurate tax filing and planning", "To avoid banking", "To raise a credit limit"], 0],
-    ["Scam Awareness", "A legitimate bank will never ask you for…", ["Your OTP or PIN", "Your name", "A branch preference"], 0]
-  ];
   var iS = useState(0), index = iS[0], setIndex = iS[1];
   var answersS = useState({}), answers = answersS[0], setAnswers = answersS[1];
-  var q = questions[index];
+  var q = PLACEMENT_ASSESSMENT_QUESTIONS[index];
   function answer(choice) {
-    var updated = Object.assign({}, answers); updated[q[0]] = choice === q[3]; setAnswers(updated);
-    if (index === questions.length - 1) {
-      var scores = Object.assign({}, DEFAULT_SCORES); questions.forEach(function (item) { scores[item[0]] = updated[item[0]] ? 85 : 35; });
-      var total = Math.round(Object.keys(updated).filter(function (key) { return updated[key]; }).length / questions.length * 100);
-      p.onComplete({ overall: total, scores: scores, completedAt: new Date().toISOString() });
-    } else setIndex(index + 1);
+    var updated = Object.assign({}, answers); updated[q.id] = choice === q.answer; setAnswers(updated);
+    if (index === PLACEMENT_ASSESSMENT_QUESTIONS.length - 1) p.onComplete(buildPlacementResult(updated));
+    else setIndex(index + 1);
   }
   return el("main", { className: "assessment" },
     el("div", { className: "assessment-badge" }, "✦ FINQUEST STARTER CHECK"),
-    el("div", { className: "assessment-progress" }, el("div", { style: { width: ((index + 1) / questions.length * 100) + "%" } })),
-    el("span", { className: "assessment-count" }, "Question " + (index + 1) + " of " + questions.length + " · " + q[0]),
+    el("div", { className: "assessment-progress" }, el("div", { style: { width: ((index + 1) / PLACEMENT_ASSESSMENT_QUESTIONS.length * 100) + "%" } })),
+    el("span", { className: "assessment-count" }, "Question " + (index + 1) + " of " + PLACEMENT_ASSESSMENT_QUESTIONS.length + " · " + q.category),
     el("h1", null, "Let’s build a path around you."),
-    el("p", null, q[1]),
-    el("div", { className: "assessment-options" }, q[2].map(function (option, optionIndex) { return el("button", { key: option, onClick: function () { answer(optionIndex); } }, el("b", null, String.fromCharCode(65 + optionIndex)), option); })),
+    el("p", null, q.question),
+    el("div", { className: "assessment-options" }, q.options.map(function (option, optionIndex) { return el("button", { key: option, onClick: function () { answer(optionIndex); } }, el("b", null, String.fromCharCode(65 + optionIndex)), option); })),
     el("small", null, "This is a learning baseline, not a financial assessment or professional advice.")
   );
 }
