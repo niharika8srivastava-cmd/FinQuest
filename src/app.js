@@ -54,6 +54,14 @@ var REWARDS = [
   { id: "special-milestone", cost: 250, emoji: "🏆", name: "Special milestone", description: "A celebration for serious progress." }
 ];
 function topicCategory(id) { return ({ "what-is-a-bank": "Banking", "savings-vs-current": "Banking", "emi": "Loans", "interest-rate": "Loans", "budgeting": "Budgeting", "emergency-fund": "Saving", "credit-card": "Credit" })[id] || "Banking"; }
+var ADVENTURE_WORLDS = [
+  { levelId: 1, icon: "🌱", name: "Money Basics", reward: "+25 XP" },
+  { levelId: 2, icon: "🏙️", name: "Banking City", reward: "+40 XP" },
+  { levelId: 3, icon: "🛍️", name: "Smart Spending", reward: "+55 XP" },
+  { levelId: 4, icon: "⛰️", name: "Investment Valley", reward: "+70 XP" },
+  { levelId: 5, icon: "🌲", name: "Protection Forest", reward: "+85 XP" },
+  { levelId: 6, icon: "🏰", name: "Financial Mastery", reward: "+100 XP" }
+];
 function loadAssessment() { try { return JSON.parse(localStorage.getItem("finquest-assessment")) || null; } catch (e) { return null; } }
 function loadStoredNumber(key, fallback) { try { var value = Number(localStorage.getItem(key)); return Number.isFinite(value) && value >= 0 ? value : fallback; } catch (e) { return fallback; } }
 function loadRedemptions() { try { var value = JSON.parse(localStorage.getItem("finquest-redemptions")); return Array.isArray(value) ? value : []; } catch (e) { return []; } }
@@ -75,6 +83,7 @@ var TOPIC_LIST = Object.keys(TOPICS).map(function (id) { return TOPICS[id]; });
 function levelTopics(levelId) { return TOPIC_LIST.filter(function (t) { return t.level === levelId; }); }
 function todayStr() { return new Date().toDateString(); }
 function timeNow() { return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
+function loadThemePreference() { try { var value = localStorage.getItem("finquest-theme"); return value === "dark" || value === "light" || value === "system" ? value : "system"; } catch (e) { return "system"; } }
 
 /* ============================ APP ============================ */
 
@@ -100,6 +109,7 @@ function App() {
   var toastS = useState(null), toast = toastS[0], setToast = toastS[1];
   var redemptionS = useState(loadRedemptions), redemptions = redemptionS[0], setRedemptions = redemptionS[1];
   var bootS = useState(false), booted = bootS[0], setBooted = bootS[1];
+  var themeS = useState(loadThemePreference), themePreference = themeS[0], setThemePreference = themeS[1];
 
   var toastTimer = useRef(null);
   function showToast(text) {
@@ -107,6 +117,11 @@ function App() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(function () { setToast(null); }, 2600);
   }
+
+  useEffect(function () {
+    document.documentElement.dataset.theme = themePreference;
+    try { localStorage.setItem("finquest-theme", themePreference); } catch (e) {}
+  }, [themePreference]);
 
   /* ---- derived ---- */
   function isMastered(id) { return !!mastered[id]; }
@@ -175,11 +190,17 @@ function App() {
     bumpStreak();
     unlockBadge("first-steps");
     var newMasteredCount = masteredCount + (masteredNow ? 1 : 0);
+    var levelUp = false;
+    if (masteredNow) {
+      var currentLevel = userLevel();
+      var currentLevelTopics = levelTopics(TOPICS[topicId].level);
+      levelUp = TOPICS[topicId].level === currentLevel && currentLevelTopics.every(function (topic) { return topic.id === topicId || isMastered(topic.id); });
+    }
     if (newMasteredCount === TOPIC_LIST.length) {
       unlockBadge("pathfinder");
       setTimeout(function () { showToast("Level 2 unlocked · Money & Income"); }, 600);
     }
-    return { verdict: verdict, xpEarned: xpEarned, masteredNow: masteredNow, nextTier: adapt.next, pct: pct, initialCorrect: correct, initialMisses: details ? details.initialMisses : 0, finalMastered: details ? details.finalMastered : correct };
+    return { verdict: verdict, xpEarned: xpEarned, masteredNow: masteredNow, levelUp: levelUp, nextTier: adapt.next, pct: pct, initialCorrect: correct, initialMisses: details ? details.initialMisses : 0, finalMastered: details ? details.finalMastered : correct };
   }
 
   /* ---- navigation ---- */
@@ -224,7 +245,7 @@ function App() {
     body = el(AssessmentScreen, { onComplete: function (result) { setAssessment(result); setCategoryScores(result.scores); try { localStorage.setItem("finquest-assessment", JSON.stringify(result)); } catch (e) {} go("map"); showToast("Your personal path is ready!"); } });
   } else if (screen.name === "map") {
     activeTab = "map";
-    body = el(MapScreen, { go: go, userLevel: userLevel(), mastered: mastered, isLevelMastered: isLevelMastered, isLevelUnlocked: isLevelUnlocked, masteredCount: masteredCount, tierFor: tierFor, assessment: assessment, categoryScores: categoryScores, onLocked: function (n) { showToast("Master Level " + (n - 1) + " to unlock this stop"); } });
+    body = el(MapScreen, { go: go, xp: xp, streak: streak, userLevel: userLevel(), mastered: mastered, isLevelMastered: isLevelMastered, isLevelUnlocked: isLevelUnlocked, masteredCount: masteredCount, tierFor: tierFor, assessment: assessment, categoryScores: categoryScores, onLocked: function (n) { showToast("Master Level " + (n - 1) + " to unlock this stop"); } });
   } else if (screen.name === "level") {
     var lvl = LEVELS[screen.levelId - 1];
     body = el(LevelScreen, { level: lvl, go: go, isMastered: isMastered, tierFor: tierFor });
@@ -237,7 +258,7 @@ function App() {
     body = el(AskScreen, { messages: askMessages, send: sendAsk, topicId: askTopicId, awardXP: awardXP, onChatAnswer: function (ok) { if (ok) { awardXP(XP_CORRECT); setCorrectCount(function (v) { return v + 1; }); bumpStreak(); unlockBadge("first-steps"); } } });
   } else if (screen.name === "progress") {
     activeTab = "progress";
-    body = el(ProgressScreen, { xp: xp, streak: streak, masteredCount: masteredCount, totalTopics: TOPIC_LIST.length, correct: corrS[0], badges: badges, log: log, scores: categoryScores, quizzesDone: quizzesDone, simMonth: sim.month, go: go });
+    body = el(ProgressScreen, { xp: xp, streak: streak, userLevel: userLevel(), masteredCount: masteredCount, totalTopics: TOPIC_LIST.length, correct: corrS[0], badges: badges, log: log, scores: categoryScores, quizzesDone: quizzesDone, simMonth: sim.month, go: go });
   } else if (screen.name === "rewards") {
     activeTab = "rewards";
     body = el(RewardsScreen, { xp: xp, rewards: REWARDS, redemptions: redemptions, redeem: redeemReward });
@@ -252,7 +273,7 @@ function App() {
   }
 
   return el("div", { className: "app-frame" },
-    el(TopBar, { xp: xp, streak: streak, userLevel: userLevel(), levelTitle: LEVELS[userLevel() - 1].title }),
+    el(TopBar, { xp: xp, streak: streak, userLevel: userLevel(), levelTitle: LEVELS[userLevel() - 1].title, theme: themePreference, setTheme: setThemePreference }),
     el("div", { className: "scroll-area" }, body),
     el(TabBar, { active: activeTab, go: goTab }),
     toast ? el("div", { className: "toast" }, toast) : null
@@ -272,7 +293,8 @@ function TopBar(p) {
       ),
       el("div", { className: "topbar-stats" },
         el("span", { className: "streak-pill" }, "🔥 ", p.streak),
-        el("span", { className: "xp-pill" }, "⚡ ", p.xp, " XP")
+        el("span", { className: "xp-pill" }, "⚡ ", p.xp, " XP"),
+        el(ThemeControl, { value: p.theme, onChange: p.setTheme })
       )
     ),
     el("div", { className: "level-line" },
@@ -280,10 +302,81 @@ function TopBar(p) {
         el("div", { className: "level-caption" }, "Level " + p.userLevel + " · " + p.levelTitle),
         el("div", { className: "progress-track" }, el("div", { className: "progress-fill", style: { width: pct + "%" } }))
       ),
-      el("div", { className: "level-xp" }, into + "/" + XP_PER_LEVEL)
+      el("div", { className: "level-xp" }, into + "/" + XP_PER_LEVEL + " XP")
     )
   );
 }
+
+function ThemeControl(p) {
+  var options = [{ value: "system", icon: "🖥", label: "System" }, { value: "light", icon: "☀️", label: "Light" }, { value: "dark", icon: "🌙", label: "Dark" }];
+  return el("div", { className: "theme-control", role: "group", "aria-label": "Appearance" },
+    options.map(function (option) {
+      return el("button", { key: option.value, type: "button", className: "theme-option" + (p.value === option.value ? " active" : ""), "aria-label": option.label, "aria-pressed": p.value === option.value, title: option.label, onClick: function () { p.onChange(option.value); } },
+        el("span", { "aria-hidden": "true" }, option.icon), el("span", { className: "theme-option-label" }, option.label)
+      );
+    })
+  );
+}
+
+  var FINNY_STATES = {
+    happy: { label: "Happy", face: "bright", spark: "✦" },
+    thinking: { label: "Thinking", face: "focused", spark: "?" },
+    confused: { label: "Confused", face: "curious", spark: "…" },
+    encouraging: { label: "Encouraging", face: "warm", spark: "↑" },
+    celebrating: { label: "Celebrating", face: "bright", spark: "⚡" },
+    explaining: { label: "Explaining", face: "focused", spark: "✧" },
+    concerned: { label: "Concerned", face: "soft", spark: "!" }
+  };
+
+  function FinnyState(p) {
+    var state = FINNY_STATES[p.value] || FINNY_STATES.happy;
+    return el("span", { className: "finny-state finny-state-" + (p.value || "happy") }, state.label);
+  }
+
+  function FinnyMascot(p) {
+    var stateName = FINNY_STATES[p.state] ? p.state : "happy";
+    var state = FINNY_STATES[stateName];
+    return el("div", { className: "finny-mascot finny-mascot-" + (p.size || "medium") + " finny-mascot-state-" + stateName + " finny-face-" + state.face, role: "img", "aria-label": "Finny, " + state.label.toLowerCase() },
+      el("span", { className: "finny-wing finny-wing-left", "aria-hidden": "true" }),
+      el("span", { className: "finny-wing finny-wing-right", "aria-hidden": "true" }),
+      el("span", { className: "finny-horn", "aria-hidden": "true" }, state.spark),
+      el("span", { className: "finny-body", "aria-hidden": "true" }),
+      el("span", { className: "finny-eye finny-eye-left", "aria-hidden": "true" }),
+      el("span", { className: "finny-eye finny-eye-right", "aria-hidden": "true" }),
+      el("span", { className: "finny-mouth", "aria-hidden": "true" }),
+      el("span", { className: "finny-cheek finny-cheek-left", "aria-hidden": "true" }),
+      el("span", { className: "finny-cheek finny-cheek-right", "aria-hidden": "true" })
+    );
+  }
+
+  function FinnyMessage(p) {
+    return el("div", { className: "finny-message" + (p.compact ? " compact" : "") },
+      el(FinnyMascot, { state: p.state || "happy", size: p.compact ? "small" : "medium" }),
+      el("div", { className: "finny-message-copy" },
+        p.title ? el("strong", null, p.title) : null,
+        el("p", null, p.message),
+        p.state ? el(FinnyState, { value: p.state }) : null
+      )
+    );
+  }
+
+  function FinnyRecommendation(p) {
+    var state = p.score <= 45 ? "encouraging" : p.score >= 80 ? "celebrating" : "explaining";
+    var message = p.score <= 45
+      ? "I noticed you're still building confidence in " + p.category + ". A short quest here will strengthen your path."
+      : p.score >= 80
+        ? "You're shining in " + p.category + ". Keep that momentum moving to the next world."
+        : "Your next smart move is a quick refresh in " + p.category + ". Small steps compound. ";
+    return el("section", { className: "finny-recommendation" },
+      el(FinnyMascot, { state: state, size: "medium" }),
+      el("div", { className: "finny-recommendation-copy" },
+        el("div", { className: "finny-recommendation-label" }, "FINNY'S QUEST TIP", el(FinnyState, { value: state })),
+        el("strong", null, "Ready for your next quest?"),
+        el("p", null, message),
+        el("button", { className: "finny-recommendation-action", onClick: p.onAction }, "Open progress →")
+      )
+    );
+  }
 
 /* ============================ MAP (skill path) ============================ */
 
@@ -322,64 +415,55 @@ function AssessmentScreen(p) {
 }
 
 function MapScreen(p) {
-  var stops = LEVELS.map(function (lv, i) {
-    var unlocked = p.isLevelUnlocked(lv.id);
-    var done = p.isLevelMastered(lv.id);
-    var isCurrent = unlocked && !done;
-    var topics = levelTopics(lv.id);
-    var doneCount = topics.filter(function (t) { return p.mastered[t.id]; }).length;
-    var stateCls = done ? "done" : isCurrent ? "current" : "locked";
-    var icon = done ? "✓" : isCurrent ? String(lv.id) : "🔒";
-    var caption;
-    if (done) caption = "Mastered · " + topics.length + " topics";
-    else if (isCurrent) caption = doneCount + " of " + topics.length + " topics mastered →";
-    else if (lv.id === 2 && unlocked) caption = "Preview · syllabus in full build";
-    else caption = "Master Level " + (lv.id - 1) + " to unlock";
-    if (lv.id === 2 && unlocked && !lv.topics) { /* preview stop */ }
-
-    return el(FRAG, { key: lv.id },
-      el("div", {
-        className: "map-stop " + stateCls,
-        onClick: function () {
-          if (unlocked) {
-            if (!lv.topics) { p.go("level", { levelId: lv.id }); }
-            else p.go("level", { levelId: lv.id });
-          } else p.onLocked(lv.id);
-        }
+  var xpIntoLevel = p.xp % XP_PER_LEVEL;
+  var xpPercent = Math.min(100, Math.round((xpIntoLevel / XP_PER_LEVEL) * 100));
+  var worlds = ADVENTURE_WORLDS.map(function (world, index) {
+    var topics = levelTopics(world.levelId);
+    var unlocked = p.isLevelUnlocked(world.levelId);
+    var done = topics.length > 0 && p.isLevelMastered(world.levelId);
+    var current = unlocked && !done;
+    var completed = topics.filter(function (topic) { return p.mastered[topic.id]; }).length;
+    var state = done ? "done" : current ? "current" : "locked";
+    var progress = topics.length ? completed + "/" + topics.length : "—/—";
+    return el(FRAG, { key: world.name },
+      el("button", {
+        className: "adventure-world " + state,
+        onClick: function () { unlocked ? p.go("level", { levelId: world.levelId }) : p.onLocked(world.levelId); },
+        "aria-label": world.name + ", " + progress,
+        "aria-disabled": !unlocked
       },
-        el("div", { className: "map-node " + stateCls }, icon),
-        el("div", { className: "map-card " + stateCls },
-          el("div", { className: "map-card-head" },
-            el("span", { className: "map-card-title" }, lv.id + ". " + lv.title),
-            isCurrent ? el("span", { className: "you-are-here" }, "you are here") : null
-          ),
-          el("div", { className: "map-card-sub" }, lv.tagline),
-          el("div", { className: "map-card-state" }, caption)
-        )
+        el("span", { className: "world-icon" }, done ? "✓" : unlocked ? world.icon : "🔒"),
+        el("span", { className: "world-copy" },
+          el("span", { className: "world-name" }, world.name),
+          el("span", { className: "world-progress" }, progress, " completed"),
+          current ? el("span", { className: "world-status" }, "Current quest") : done ? el("span", { className: "world-status" }, "World complete") : el("span", { className: "world-status" }, "Unlock the next world")
+        ),
+        el("span", { className: "world-reward" }, "🏆 ", world.reward)
       ),
-      i < LEVELS.length - 1 ? el("div", { className: "map-link" }) : null
+      index < ADVENTURE_WORLDS.length - 1 ? el("div", { className: "adventure-connector " + (done ? "complete" : "") }, el("span", null, "✦")) : null
     );
   });
 
   return el(FRAG, null,
-    el("section", { className: "welcome-card" },
-      el("div", { className: "welcome-copy" },
-        el("span", { className: "overline" }, "TODAY'S FOCUS"),
-        el("h1", null, "Build your money confidence."),
-        el("p", null, p.masteredCount ? "Keep the momentum going—one clear concept at a time." : "Start small. Learn the language of money at your own pace."),
-        el("button", { className: "continue-btn", onClick: function () { p.go("level", { levelId: p.userLevel }); } }, p.masteredCount ? "Continue your path  →" : "Start Level 1  →")
+    el("section", { className: "adventure-hero" },
+      el("div", { className: "adventure-hero-copy" },
+        el("span", { className: "adventure-kicker" }, "FINQUEST ADVENTURE MAP"),
+        el("h1", null, "Your money story starts here."),
+        el("p", null, "Choose your next world, master the path, and turn money knowledge into momentum."),
+        el("button", { className: "continue-btn", onClick: function () { p.go("level", { levelId: p.userLevel }); } }, p.masteredCount ? "Continue quest →" : "Enter Money Basics →")
       ),
-      el("div", { className: "welcome-orbit", "aria-hidden": "true" },
-        el("span", { className: "orbit-rupee" }, "₹"),
-        el("span", { className: "orbit-dot dot-one" }),
-        el("span", { className: "orbit-dot dot-two" })
-      )
+      el("div", { className: "adventure-avatar", "aria-label": "FinQuest player avatar" }, "✦")
     ),
-    el("div", { className: "quick-stats" },
-      el("div", null, el("strong", null, p.masteredCount), el("span", null, "topics mastered")),
-      el("div", null, el("strong", null, p.userLevel), el("span", null, "current level")),
-      el("div", null, el("strong", null, Math.max(0, TOPIC_LIST.length - p.masteredCount)), el("span", null, "still to explore"))
+    el("section", { className: "player-hud", "aria-label": "Player progress" },
+      el("div", { className: "player-avatar" }, "₹"),
+      el("div", { className: "player-level" }, el("span", null, "LEVEL " + p.userLevel), el("strong", null, LEVELS[p.userLevel - 1].title)),
+      el("div", { className: "player-xp" }, el("div", { className: "hud-label" }, "XP PROGRESS", el("b", null, xpIntoLevel + " / " + XP_PER_LEVEL + " XP")), el("div", { className: "hud-track" }, el("div", { style: { width: xpPercent + "%" } }))),
+      el("div", { className: "hud-stat streak" }, el("span", null, "🔥"), el("strong", null, p.streak + " Day"), el("small", null, "Quest streak")),
+      el("div", { className: "hud-stat coins" }, el("span", null, "🪙"), el("strong", null, "—"), el("small", null, "Coins unavailable"))
     ),
+    el(FinnyRecommendation, { category: Object.keys(p.categoryScores).sort(function (a, b) { return p.categoryScores[a] - p.categoryScores[b]; })[0], score: Math.min.apply(null, Object.keys(p.categoryScores).map(function (key) { return p.categoryScores[key]; })), onAction: function () { p.go("progress"); } }),
+    el("div", { className: "adventure-section-heading" }, el("span", null, "THE REALMS"), el("strong", null, "Choose your next quest")),
+    el("div", { className: "adventure-path" }, worlds),
     p.assessment ? el("button", { className: "mission-card", onClick: function () { p.go("progress"); } }, el("span", null, "🎯"), el("span", null, el("b", null, "Today’s mission"), " Improve your lowest skill: " + Object.keys(p.categoryScores).sort(function (a, b) { return p.categoryScores[a] - p.categoryScores[b]; })[0]), el("i", null, "→")) : null,
     el("div", { className: "practice-grid" },
       el("button", { onClick: function () { p.go("scenario"); } }, el("span", null, "💭"), el("b", null, "What would you do?"), el("small", null, "Scenario challenge · +15 XP")),
@@ -387,14 +471,9 @@ function MapScreen(p) {
     ),
     el("button", { className: "ask-entry", onClick: function () { p.go("ask"); } },
       el("span", { className: "ask-entry-icon" }, "💬"),
-      el("span", { className: "ask-entry-text" },
-        el("span", { className: "ask-entry-title" }, "Ask anything"),
-        el("span", { className: "ask-entry-sub" }, "No topic is locked — only mastery is. Advanced answers build you a bridge.")
-      ),
+      el("span", { className: "ask-entry-text" }, el("span", { className: "ask-entry-title" }, "Ask anything"), el("span", { className: "ask-entry-sub" }, "Your AI companion can explain any stop on the map.")),
       el("span", { className: "ask-entry-arrow" }, "→")
-    ),
-    el("div", { className: "path-title" }, "Your path"),
-    el("div", { className: "map" }, stops)
+    )
   );
 }
 
@@ -434,11 +513,24 @@ function TopicScreen(p) {
   var simpleS = useState(false), simple = simpleS[0], setSimple = simpleS[1];
   var exS = useState(0), exIdx = exS[0], setEx = exS[1];
   var t = p.topic;
+  var questQuestions = t.quiz[p.tier] || [];
+  var difficultyStars = p.tier === "sharp" ? "★★★" : p.tier === "standard" ? "★★☆" : "★☆☆";
   return el(FRAG, null,
     el("div", { className: "back-row", onClick: function () { p.go("level", { levelId: t.level }); } }, "← " + LEVELS[t.level - 1].title),
-    el("div", { className: "explain-card" },
-      el("div", { className: "eyebrow-chip" }, "Level " + t.level + " · " + (p.mastered ? "mastered" : "next quiz: " + p.tier + " questions")),
+    el("section", { className: "quest-briefing" },
+      el("div", { className: "quest-briefing-top" },
+        el("div", { className: "quest-emblem" }, "⚡"),
+        el("div", null, el("span", { className: "quest-kicker" }, "QUEST BRIEFING"), el("div", { className: "quest-location" }, LEVELS[t.level - 1].title))
+      ),
+      el("div", { className: "quest-difficulty" }, "Difficulty ", el("strong", null, difficultyStars)),
       el("h1", { className: "explain-title" }, t.title),
+      el("p", { className: "quest-prompt" }, "You need to help a learner understand this money mission."),
+      el(FinnyMessage, { state: "encouraging", compact: true, title: "Finny's briefing", message: p.mastered ? "This quest is already in your spellbook. Sharpen it for a stronger streak." : "Take this one step at a time. Understanding beats rushing." }),
+      el("div", { className: "quest-rewards" },
+        el("span", null, "REWARDS"),
+        el("strong", null, "⚡ +" + (XP_CORRECT * questQuestions.length) + " XP"),
+        el("strong", { className: "reward-unavailable" }, "🪙 Coins unavailable")
+      ),
       el("p", { className: "explain-body" }, simple ? t.simpler : t.definition),
       el("div", { className: "block" },
         el("div", { className: "block-label" }, "🧪 See it in real life"),
@@ -455,7 +547,7 @@ function TopicScreen(p) {
     el("div", { className: "action-grid" },
       el("button", { className: "btn btn-ghost", onClick: function () { setSimple(!simple); } }, simple ? "Show the full version" : "Make it simpler"),
       el("button", { className: "btn btn-ghost", onClick: function () { setEx(exIdx === 0 ? 1 : 0); } }, "Another example"),
-      el("button", { className: "btn btn-primary", onClick: function () { p.go("quiz", { topicId: t.id }); } }, "Start the quiz →")
+      el("button", { className: "btn btn-primary quest-start", onClick: function () { p.go("quiz", { topicId: t.id }); } }, "Start quest →")
     )
   );
 }
@@ -477,6 +569,7 @@ function QuizScreen(p) {
   var initialMissesS = useState(0), initialMisses = initialMissesS[0], setInitialMisses = initialMissesS[1];
   var sumS = useState(null), summary = sumS[0], setSummary = sumS[1];
   var floatS = useState(0), floatKey = floatS[0], bumpFloat = floatS[1];
+  var explainS = useState(false), showExplanation = explainS[0], setShowExplanation = explainS[1];
 
   var q = phase === "revision" ? revisionQueue[revisionIdx] : qs[Math.min(idx, qs.length - 1)];
   var total = qs.length;
@@ -485,6 +578,7 @@ function QuizScreen(p) {
   function pick(i) {
     if (picked !== null) return;
     setPicked(i);
+    setShowExplanation(i === q.answer);
     var ok = i === q.answer;
     setResults(function (old) { var next = Object.assign({}, old); next[q.quizId] = ok; return next; });
     if (ok) { setCorrect(correct + 1); if (phase === "question") setInitialCorrect(initialCorrect + 1); p.onAnswer(true); bumpFloat(floatKey + 1); }
@@ -499,29 +593,30 @@ function QuizScreen(p) {
           setSummary(p.onComplete(initialCorrect, total, { initialMisses: initialMisses, revisionMastered: revisionMastered + 1, finalMastered: initialCorrect + revisionMastered + 1 }));
           setPhase("summary");
         } else {
-          setRevisionQueue(remaining); setRevisionIdx(revisionIdx >= remaining.length ? 0 : revisionIdx); setPicked(null);
+          setRevisionQueue(remaining); setRevisionIdx(revisionIdx >= remaining.length ? 0 : revisionIdx); setPicked(null); setShowExplanation(false);
         }
       } else {
-        setRevisionIdx((revisionIdx + 1) % revisionQueue.length); setPicked(null);
+        setRevisionIdx((revisionIdx + 1) % revisionQueue.length); setPicked(null); setShowExplanation(false);
       }
       return;
     }
     if (isLast) {
       var misses = qs.filter(function (question) { return results[question.quizId] !== true; });
       setInitialMisses(misses.length);
-      if (misses.length) { setRevisionQueue(misses); setRevisionIdx(0); setPicked(null); setPhase("revision"); }
+      if (misses.length) { setRevisionQueue(misses); setRevisionIdx(0); setPicked(null); setShowExplanation(false); setPhase("revision"); }
       else { setSummary(p.onComplete(initialCorrect, total, { initialMisses: 0, revisionMastered: 0, finalMastered: initialCorrect })); setPhase("summary"); }
-    } else { setIdx(idx + 1); setPicked(null); }
+    } else { setIdx(idx + 1); setPicked(null); setShowExplanation(false); }
   }
 
   if (phase === "summary") {
     var v = summary.verdict;
     return el(FRAG, null,
       el("div", { className: "back-row", onClick: function () { p.go("topic", { topicId: p.topic.id }); } }, "← " + p.topic.title),
-      el("div", { className: "summary" },
+      el("div", { className: "summary quest-summary" + (summary.levelUp ? " level-up" : "") },
         el("div", { className: "summary-emoji " + v.accent }, v.emoji),
         el("div", { className: "summary-title" }, v.title),
         el("div", { className: "summary-headline" }, v.headline),
+        summary.levelUp ? el(FinnyMessage, { state: "celebrating", title: "Level up! ⚡", message: "You cleared the path and unlocked the next chapter." }) : summary.masteredNow ? el(FinnyMessage, { state: "celebrating", title: "Quest complete!", message: "That idea is now part of your toolkit." }) : null,
         el("div", { className: "verdict-banner " + v.accent },
           el("div", { className: "verdict-copy" }, v.copy),
           el("div", { className: "next-tier" }, summary.initialMisses ? "Revision complete · " : "Next round: ", el("b", null, summary.initialMisses ? summary.finalMastered + "/" + total : summary.nextTier), summary.initialMisses ? " mastered" : " questions",
@@ -557,7 +652,8 @@ function QuizScreen(p) {
       var dotIndex = phase === "revision" ? revisionIdx : idx;
       return el("span", { key: i, className: "quiz-dot" + (i < dotIndex || (i === dotIndex && answered) ? " filled" : i === dotIndex ? " current" : "") });
     })),
-    el("div", { className: "quiz-card" },
+    el("div", { className: "quiz-card quest-quiz-card" },
+      el("div", { className: "quest-quiz-banner" }, el("span", null, "⚡ QUEST IN PROGRESS"), el("strong", null, p.topic.title)),
       el("div", { className: "quiz-q" }, q.q),
       el("div", { className: "quiz-opts" }, q.options.map(function (opt, i) {
         var cls = "quiz-opt";
@@ -565,12 +661,16 @@ function QuizScreen(p) {
         return el("button", { key: i, className: cls, onClick: function () { pick(i); } },
           el("span", { className: "opt-letter" }, String.fromCharCode(65 + i)), opt);
       })),
-      answered ? el("div", { className: "feedback " + (ok ? "ok" : "bad") },
+      answered ? el("div", { className: "feedback " + (ok ? "ok answer-correct" : "bad answer-incorrect") },
         el("div", { className: "feedback-title" },
-          ok ? "Correct — take your XP" : "Not quite — here's the brick you missed",
+          ok ? "✓ Correct!" : "Almost there! 😅",
           ok ? el("span", { key: floatKey, className: "xp-float" }, "+" + XP_CORRECT) : null
         ),
-        el("div", { className: "feedback-text" }, q.explain),
+        el("div", { className: "feedback-text" }, ok || showExplanation ? q.explain : "This choice misses an important part of the idea. Ask Finny to unpack the reasoning, then try the quest again."),
+        !ok ? el("div", { className: "quiz-retry-actions" },
+          el("button", { className: "btn btn-ghost", onClick: function () { setPicked(null); setShowExplanation(false); } }, "Try again"),
+          el("button", { className: "btn btn-ghost", onClick: function () { setShowExplanation(true); } }, "Explain it")
+        ) : null,
         el("button", { className: "btn btn-primary feedback-next", onClick: next }, isLast ? "See your result →" : "Next question →")
       ) : null
     )
@@ -640,13 +740,11 @@ function AskScreen(p) {
 
   return el("div", { className: "chat-wrap" },
     el("div", { className: "chat-scroll", ref: scrollRef },
-      el("div", { className: "msg-ai intro" },
-        el("b", null, "Ask FinBuddy about money."), " Your AI tutor is scoped to finance, banking and financial literacy—UPI, budgets, investing basics, loans, scams and more. Every lesson ends with a quick Test Yourself challenge."
-      ),
+      el(FinnyMessage, { state: "happy", title: "Ask FinBuddy about money.", message: "I can help with finance, banking and financial literacy—UPI, budgets, investing basics, loans, scams and more. Every lesson ends with a quick Test Yourself challenge." }),
       p.messages.map(function (m, i) {
         if (m.from === "user") return el("div", { key: i, className: "msg-user" }, m.text);
-        if (m.kind === "typing") return el("div", { key: i, className: "msg-ai typing" }, el("span", null), el("span", null), el("span", null));
-        if (m.kind === "error") return el("div", { key: i, className: "msg-ai chat-error" }, "⚠ ", m.text);
+        if (m.kind === "typing") return el("div", { key: i, className: "msg-ai finny-chat-message" }, el(FinnyMessage, { state: "thinking", compact: true, message: "Thinking through that..." }));
+        if (m.kind === "error") return el("div", { key: i, className: "msg-ai chat-error finny-chat-message" }, el(FinnyMessage, { state: "concerned", compact: true, message: m.text }));
         if (m.kind === "flag") return el("div", { key: i, className: "msg-ai flag" }, "🌉 ", m.text);
         if (m.kind === "bridge") return el("div", { key: i, className: "msg-ai bridge-wrap" }, el(BridgeChain, { chain: m.chain }));
         if (m.kind === "bridge-blurbs") return null;
@@ -655,7 +753,7 @@ function AskScreen(p) {
         }));
         if (m.kind === "quiz") return el("div", { key: i, className: "msg-ai" }, el(InlineQuiz, { quiz: m.quiz, onAnswer: p.onChatAnswer }));
         if (m.kind === "tutor-quiz") return el("div", { key: i, className: "msg-ai tutor-quiz" }, el("div", { className: "tutor-quiz-title" }, "🎯 Test yourself · +" + XP_CORRECT + " XP"), el(InlineQuiz, { quiz: [m.quiz], onAnswer: p.onChatAnswer }));
-        return el("div", { key: i, className: "msg-ai" }, (m.text || "").split("\n").map(function (line, li) { return el("p", { key: li, className: "ai-line" }, line); }));
+        return el("div", { key: i, className: "msg-ai finny-chat-message" }, el(FinnyMessage, { state: "explaining", compact: true, message: (m.text || "").replace(/\n/g, " ") }));
       }),
       showChips ? el("div", { className: "chip-row" },
         ["Ask “Why?”", "Another example", "Make it simpler", "Quiz me"].map(function (c) {
@@ -741,8 +839,9 @@ function ScamScreen(p) {
   ];
   var iS = useState(0), index = iS[0], setIndex = iS[1]; var answerS = useState(null), answer = answerS[0], setAnswer = answerS[1]; var card = cards[index];
   function decide(value) { if (answer !== null) return; setAnswer(value); if (value === card.scam) { p.awardXP(10); p.setCategoryScores(function (scores) { var next = Object.assign({}, scores); next["Scam Awareness"] = Math.min(100, next["Scam Awareness"] + 10); return next; }); } }
-  return el("section", { className: "scam-page" }, el("span", { className: "eyebrow-chip" }, "SCAM DETECTOR"), el("h1", null, "Real or scam?"), el("p", null, "Read the message like a fraud analyst. Trust the warning signs, not the pressure."),
-    el("div", { className: "scam-message" }, card.text), el("div", { className: "scam-actions" }, el("button", { onClick: function () { decide(false); } }, "✓ Real"), el("button", { onClick: function () { decide(true); } }, "⚠ Scam")),
+  return el("section", { className: "scam-page" }, el("span", { className: "eyebrow-chip" }, "SCAM AWARENESS"), el("h1", null, "Spot the warning signs"), el("p", null, "Read the message and choose the safest response."),
+    el("div", { className: "scam-question" }, el("span", null, "QUESTION · 1"), el("strong", null, "Would you trust this message?")),
+    el("div", { className: "scam-message" }, el("span", { className: "scam-message-label" }, "MESSAGE"), el("div", null, card.text)), el("div", { className: "scam-actions" }, el("button", { onClick: function () { decide(false); } }, "✓ Real"), el("button", { onClick: function () { decide(true); } }, "⚠ Scam")),
     answer !== null ? el("div", { className: "scam-result " + (answer === card.scam ? "good" : "bad") }, el("b", null, answer === card.scam ? "Correct · +10 XP" : "Look closer next time"), el("p", null, card.signs), el("button", { className: "btn btn-primary", onClick: function () { setAnswer(null); setIndex((index + 1) % cards.length); } }, "Next message →")) : null
   );
 }
@@ -752,27 +851,45 @@ function ScamScreen(p) {
 function ProgressScreen(p) {
   var overall = Math.round(CATEGORY_NAMES.reduce(function (sum, name) { return sum + p.scores[name]; }, 0) / CATEGORY_NAMES.length);
   var weakest = CATEGORY_NAMES.slice().sort(function (a, b) { return p.scores[a] - p.scores[b]; })[0];
+  var trophies = [
+    { id: "banking-beginner", icon: "🏦", name: "Banking Beginner", progress: p.quizzesDone ? 100 : 0, requirement: "Complete your first learning quest", status: p.badges["first-steps"] ? "UNLOCKED" : p.quizzesDone ? "IN PROGRESS" : "LOCKED" },
+    { id: "smart-saver", icon: "💰", name: "Smart Saver", progress: p.scores.Saving, requirement: "Build consistent saving confidence", status: trophyStatus(p.scores.Saving) },
+    { id: "investor", icon: "📈", name: "Investor", progress: p.scores.Investing, requirement: "Reach 80% investing confidence", status: trophyStatus(p.scores.Investing) },
+    { id: "credit-champ", icon: "💳", name: "Credit Champ", progress: p.scores.Credit, requirement: "Reach 80% credit confidence", status: trophyStatus(p.scores.Credit) },
+    { id: "risk-warrior", icon: "🛡", name: "Risk Warrior", progress: p.scores["Scam Awareness"], requirement: "Reach 80% protection confidence", status: trophyStatus(p.scores["Scam Awareness"]) },
+    { id: "streak-master", icon: "🔥", name: "Streak Master", progress: Math.min(100, Math.round((p.streak / 7) * 100)), requirement: "Learn consistently for 7 days", status: p.streak >= 7 ? "UNLOCKED" : p.streak > 0 ? "IN PROGRESS" : "LOCKED" },
+    { id: "financial-planner", icon: "🧠", name: "Financial Planner", progress: p.scores.Budgeting, requirement: "Reach 80% budgeting confidence", status: trophyStatus(p.scores.Budgeting) },
+    { id: "wealth-master", icon: "👑", name: "Wealth Master", progress: Math.round((p.masteredCount / p.totalTopics) * 100), requirement: "Master every available topic", status: p.masteredCount === p.totalTopics ? "MASTERED" : p.masteredCount ? "IN PROGRESS" : "LOCKED" }
+  ];
+  function trophyStatus(progress) { return progress >= 100 ? "MASTERED" : progress >= 80 ? "UNLOCKED" : progress > 0 ? "IN PROGRESS" : "LOCKED"; }
+  function trophyClass(status) { return status.toLowerCase().replace(" ", "-"); }
+  function trophyReward(trophy) { return trophy.status === "MASTERED" || trophy.status === "UNLOCKED" ? "+" + XP_SHARP_BONUS + " XP" : "XP on mastery"; }
   return el(FRAG, null,
-    el("div", { className: "dashboard-hero" }, el("span", null, "FINANCIAL LITERACY SCORE"), el("strong", null, overall), el("b", null, "/100"), el("p", null, "Focus next: improve your " + weakest + " skills."), el("button", { onClick: function () { p.go("scenario"); } }, "Practice " + weakest + " →")),
-    el("div", { className: "path-title" }, "Your learning dashboard"),
-    el("div", { className: "stat-row" },
-      el("div", { className: "stat-cell" }, el("div", { className: "stat-num" }, p.xp), el("div", { className: "stat-lab" }, "total XP")),
-      el("div", { className: "stat-cell" }, el("div", { className: "stat-num" }, p.streak), el("div", { className: "stat-lab" }, "day streak")),
-      el("div", { className: "stat-cell" }, el("div", { className: "stat-num" }, p.masteredCount + "/" + p.totalTopics), el("div", { className: "stat-lab" }, "topics mastered")),
-      el("div", { className: "stat-cell" }, el("div", { className: "stat-num" }, p.correct), el("div", { className: "stat-lab" }, "correct answers"))
+    el("section", { className: "trophy-profile" },
+      el("div", { className: "trophy-avatar" }, el(FinnyMascot, { state: overall >= 80 ? "celebrating" : "encouraging", size: "medium" })),
+      el("div", { className: "trophy-profile-copy" }, el("span", { className: "trophy-kicker" }, "FINQUEST ADVENTURER"), el("h1", null, "The Trophy Room"), el("p", null, "Your financial character sheet, built from the quests you actually complete.")),
+      el("div", { className: "trophy-level" }, el("span", null, "LEVEL"), el("strong", null, p.userLevel), el("small", null, "current hero level"))
     ),
-    el("div", { className: "dashboard-mini" }, el("div", null, el("b", null, p.quizzesDone), el("span", null, "quizzes completed")), el("div", null, el("b", null, p.simMonth - 1), el("span", null, "simulation choices")), el("div", null, el("b", null, Object.keys(p.badges).length), el("span", null, "badges earned"))),
-    el("div", { className: "path-title small" }, "Skills by category"),
-    el("div", { className: "category-list" }, CATEGORY_NAMES.map(function (name) { return el("div", { key: name, className: "category-row" }, el("span", null, name), el("div", null, el("i", { style: { width: p.scores[name] + "%" } })), el("b", null, p.scores[name] + "%")); })),
-    el("div", { className: "path-title small" }, "Badges"),
-    el("div", { className: "badge-grid" }, BADGES.map(function (b) {
-      var got = !!p.badges[b.id];
-      return el("div", { key: b.id, className: "badge-cell" + (got ? "" : " locked") },
-        el("div", { className: "badge-emoji" }, got ? b.emoji : "🔒"),
-        el("div", { className: "badge-name" }, b.name),
-        el("div", { className: "badge-rule" }, b.rule)
+    el("div", { className: "trophy-stats" },
+      el("div", null, el("strong", null, p.xp), el("span", null, "total XP")),
+      el("div", null, el("strong", null, p.streak), el("span", null, "day streak")),
+      el("div", null, el("strong", null, p.masteredCount + "/" + p.totalTopics), el("span", null, "topics mastered")),
+      el("div", null, el("strong", null, overall + "%"), el("span", null, "literacy score"))
+    ),
+    el("div", { className: "trophy-room-heading" }, el("span", null, "COLLECTION"), el("strong", null, "Badges & milestones")),
+    el("div", { className: "trophy-grid" }, trophies.map(function (trophy) {
+      return el("article", { key: trophy.id, className: "trophy-card trophy-" + trophyClass(trophy.status) },
+        el("div", { className: "trophy-card-top" }, el("div", { className: "trophy-icon" }, trophy.status === "LOCKED" ? "🔒" : trophy.icon), el("span", { className: "trophy-status" }, trophy.status)),
+        el("h2", null, trophy.name),
+        el("div", { className: "trophy-progress-label" }, el("span", null, trophy.progress + "%"), el("span", null, trophy.status === "MASTERED" ? "Mastered" : "Progress")),
+        el("div", { className: "trophy-progress" }, el("i", { style: { width: trophy.progress + "%" } })),
+        el("p", { className: "trophy-requirement" }, el("b", null, "Unlock: "), trophy.requirement),
+        el("div", { className: "trophy-reward" }, el("span", null, "Reward"), el("strong", null, trophyReward(trophy)), el("small", null, "🪙 Coins unavailable"))
       );
     })),
+    el("div", { className: "trophy-room-heading compact" }, el("span", null, "SKILL TREE"), el("strong", null, "Where to grow next")),
+    el("div", { className: "category-list" }, CATEGORY_NAMES.map(function (name) { return el("div", { key: name, className: "category-row" }, el("span", null, name), el("div", null, el("i", { style: { width: p.scores[name] + "%" } })), el("b", null, p.scores[name] + "%")); })),
+    el("button", { className: "trophy-mission", onClick: function () { p.go("scenario"); } }, el("span", null, "🎯"), el("span", null, el("b", null, "Next training mission"), " Practice your " + weakest + " skills."), el("i", null, "→")),
     el("div", { className: "path-title small" }, "Recent rounds"),
     p.log.length === 0
       ? el("div", { className: "empty-note" }, "No rounds yet. Your quiz history will land here.")
